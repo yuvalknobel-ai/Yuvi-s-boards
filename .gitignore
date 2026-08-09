@@ -1,0 +1,6 @@
+# This repo tracks ONLY the Boards app.
+# Ignore everything at the top level by default, then allow just what we want.
+/*
+!boards.html
+!README.md
+!.gitignore
