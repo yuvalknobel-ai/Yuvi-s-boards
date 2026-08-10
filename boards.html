@@ -197,6 +197,25 @@
   }
   .col-head .col-del { cursor: pointer; color: var(--text-muted); padding: 0 5px; border-radius: 5px; font-size: 16px; }
   .col-head .col-del:hover { color: #d98c8c; background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .col-head .col-menu-btn { cursor: pointer; color: var(--text-muted); padding: 0 5px; border-radius: 5px; font-size: 17px; line-height: 1; }
+  .col-head .col-menu-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .col-head .col-menu-btn.active { color: var(--accent-strong); }
+  .col-menu {
+    position: fixed; z-index: 90; width: 222px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow-lift); padding: 8px;
+  }
+  .col-menu .mh { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); padding: 6px 8px 4px; }
+  .col-menu .menu-item { display: flex; align-items: center; gap: 4px; width: 100%; text-align: left; background: none; border: none; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text-soft); font-family: inherit; }
+  .col-menu .menu-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .col-menu .menu-item.on { color: var(--text); font-weight: 600; }
+  .col-menu .mi-check { width: 15px; flex-shrink: 0; color: var(--accent-strong); }
+  .col-menu .menu-div { height: 1px; background: var(--border); margin: 6px 4px; }
+  .col-menu .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 6px 4px; }
+  .col-menu .menu-chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 20px; padding: 5px 10px; font-size: 12px; cursor: pointer; color: var(--text-muted); background: none; font-family: inherit; }
+  .col-menu .menu-chip .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .col-menu .menu-chip.on { border-color: transparent; color: var(--text); font-weight: 500; }
+  .col-menu .menu-clear { width: 100%; text-align: center; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 7px; margin-top: 2px; font-family: inherit; border-radius: 8px; }
+  .col-menu .menu-clear:hover { color: var(--accent-strong); background: color-mix(in srgb, var(--text) 5%, transparent); }
   .cards { padding: 4px 12px; overflow-y: auto; flex: 1; min-height: 10px; }
 
   .card {
@@ -550,6 +569,7 @@
   }
 
   function renderBoard() {
+    closeColMenu();
     const topic = activeTopic();
     headerEl.innerHTML = "";
     boardEl.innerHTML = "";
@@ -642,6 +662,93 @@
     if (ordered.length === topic.columns.length) { topic.columns = ordered; save(); }
   }
 
+  // The cards a column actually shows = filter + sort applied on top of manual order (view only)
+  function columnView(topic, col) {
+    let v = col.cards.slice();
+    if (topic.hideDone) v = v.filter(c => !c.done);
+    if (col.filter && col.filter.length) v = v.filter(c => (c.labels || []).some(k => col.filter.includes(k)));
+    const sort = col.sort || "manual";
+    if (sort === "label") {
+      const rank = c => { const idxs = (c.labels || []).map(k => LABELS.findIndex(l => l.key === k)).filter(i => i >= 0); return idxs.length ? Math.min(...idxs) : 999; };
+      v.sort((a, b) => rank(a) - rank(b)); // stable → ties keep manual order
+    } else if (sort === "due") {
+      const rank = c => c.due ? new Date(c.due + "T00:00:00").getTime() : Infinity;
+      v.sort((a, b) => rank(a) - rank(b));
+    }
+    return v;
+  }
+
+  function rerenderColumn(topic, col) {
+    const old = boardEl.querySelector('.column[data-col-id="' + col.id + '"]');
+    if (old) old.replaceWith(renderColumn(topic, col));
+    updateProgress();
+  }
+
+  // ---------- Column sort / filter menu ----------
+  let openMenuEl = null;
+  function onDocClickMenu(e) { if (openMenuEl && !openMenuEl.contains(e.target)) closeColMenu(); }
+  function onMenuKey(e) { if (e.key === "Escape") closeColMenu(); }
+  function closeColMenu() {
+    if (!openMenuEl) return;
+    openMenuEl.remove(); openMenuEl = null;
+    document.removeEventListener("click", onDocClickMenu);
+    document.removeEventListener("keydown", onMenuKey);
+  }
+  function fillColMenu(menu, topic, col) {
+    menu.innerHTML = "";
+    const sh = document.createElement("div"); sh.className = "mh"; sh.textContent = "Sort by"; menu.appendChild(sh);
+    [["manual", "Added order"], ["label", "Label color"], ["due", "Due date"]].forEach(([key, label]) => {
+      const on = (col.sort || "manual") === key;
+      const item = document.createElement("button");
+      item.className = "menu-item" + (on ? " on" : "");
+      const chk = document.createElement("span"); chk.className = "mi-check"; chk.textContent = on ? "✓" : "";
+      item.append(chk, document.createTextNode(label));
+      item.addEventListener("click", () => { col.sort = key; closeColMenu(); save(); renderBoard(); });
+      menu.appendChild(item);
+    });
+    const dv = document.createElement("div"); dv.className = "menu-div"; menu.appendChild(dv);
+    const fh = document.createElement("div"); fh.className = "mh"; fh.textContent = "Filter by label"; menu.appendChild(fh);
+    const chips = document.createElement("div"); chips.className = "chips";
+    LABELS.forEach(l => {
+      const on = col.filter && col.filter.includes(l.key);
+      const chip = document.createElement("button");
+      chip.className = "menu-chip" + (on ? " on" : "");
+      if (on) chip.style.background = `color-mix(in srgb, ${l.color} 22%, transparent)`;
+      const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = l.color;
+      chip.append(dot, document.createTextNode(l.name));
+      chip.addEventListener("click", () => {
+        col.filter = col.filter || [];
+        const i = col.filter.indexOf(l.key);
+        if (i >= 0) col.filter.splice(i, 1); else col.filter.push(l.key);
+        save(); rerenderColumn(topic, col); fillColMenu(menu, topic, col);
+      });
+      chips.appendChild(chip);
+    });
+    menu.appendChild(chips);
+    if (col.filter && col.filter.length) {
+      const clr = document.createElement("button"); clr.className = "menu-clear"; clr.textContent = "Clear filter";
+      clr.addEventListener("click", () => { col.filter = []; save(); rerenderColumn(topic, col); fillColMenu(menu, topic, col); });
+      menu.appendChild(clr);
+    }
+  }
+  function openColMenu(btn, topic, col) {
+    const same = openMenuEl && openMenuEl.dataset.colId === col.id;
+    closeColMenu();
+    if (same) return; // clicking the same button closes it
+    const menu = document.createElement("div");
+    menu.className = "col-menu"; menu.dataset.colId = col.id;
+    menu.addEventListener("click", (e) => e.stopPropagation()); // keep clicks inside from closing it
+    fillColMenu(menu, topic, col);
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    let left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
+    let top = r.bottom + 6;
+    if (top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - menu.offsetHeight - 6);
+    menu.style.left = left + "px"; menu.style.top = top + "px";
+    openMenuEl = menu;
+    setTimeout(() => { document.addEventListener("click", onDocClickMenu); document.addEventListener("keydown", onMenuKey); }, 0);
+  }
+
   function renderColumn(topic, col) {
     const wrap = document.createElement("div");
     wrap.className = "column"; wrap.dataset.colId = col.id; wrap.draggable = true;
@@ -656,8 +763,17 @@
       wrap.draggable = false;
       inlineEdit(nameEl, col.name, (val) => { col.name = val || col.name; save(); render(); });
     });
+    const view = columnView(topic, col);
     const count = document.createElement("span");
-    count.className = "count"; count.textContent = col.cards.length;
+    count.className = "count";
+    count.textContent = (view.length !== col.cards.length) ? (view.length + "/" + col.cards.length) : String(col.cards.length);
+
+    const active = (col.sort && col.sort !== "manual") || (col.filter && col.filter.length);
+    const menuBtn = document.createElement("span");
+    menuBtn.className = "col-menu-btn" + (active ? " active" : "");
+    menuBtn.textContent = "⋮"; menuBtn.title = "Sort & filter";
+    menuBtn.addEventListener("click", (e) => { e.stopPropagation(); openColMenu(menuBtn, topic, col); });
+
     const colDel = document.createElement("span");
     colDel.className = "col-del"; colDel.textContent = "×"; colDel.title = "Delete column";
     colDel.addEventListener("click", () => {
@@ -668,12 +784,14 @@
     const headLeft = document.createElement("div");
     headLeft.style.cssText = "display:flex;align-items:center;gap:8px;flex:1";
     headLeft.append(nameEl, count);
-    head.append(headLeft, colDel);
+    const headRight = document.createElement("div");
+    headRight.style.cssText = "display:flex;align-items:center;gap:2px";
+    headRight.append(menuBtn, colDel);
+    head.append(headLeft, headRight);
 
     const cardsEl = document.createElement("div");
     cardsEl.className = "cards"; cardsEl.dataset.colId = col.id;
-    const visibleCards = topic.hideDone ? col.cards.filter(c => !c.done) : col.cards;
-    visibleCards.forEach(card => cardsEl.appendChild(renderCard(topic, col, card)));
+    view.forEach(card => cardsEl.appendChild(renderCard(topic, col, card)));
 
     wrap.addEventListener("dragstart", (e) => {
       if (e.target.closest(".card") || e.target.closest(".add-card")) return;
@@ -849,18 +967,35 @@
     const topic = activeTopic(); if (!topic) return;
     const lookup = {}; topic.columns.forEach(c => c.cards.forEach(cd => lookup[cd.id] = cd));
     const inDom = new Set([...document.querySelectorAll(".card")].map(el => el.dataset.cardId));
+    // which column each visible card currently sits in
+    const domColOf = {};
+    document.querySelectorAll(".cards").forEach(cardsEl => {
+      cardsEl.querySelectorAll(".card").forEach(el => domColOf[el.dataset.cardId] = cardsEl.dataset.colId);
+    });
     document.querySelectorAll(".cards").forEach(cardsEl => {
       const col = topic.columns.find(c => c.id === cardsEl.dataset.colId);
       if (!col) return;
       const domOrder = [...cardsEl.querySelectorAll(".card")].map(el => lookup[el.dataset.cardId]).filter(Boolean);
-      const hidden = col.cards.filter(c => !inDom.has(c.id)); // preserve cards hidden by "Hide done"
-      col.cards = [...domOrder, ...hidden];
+      if ((col.sort || "manual") === "manual") {
+        const hidden = col.cards.filter(c => !inDom.has(c.id)); // preserve cards hidden by hide-done/filter
+        col.cards = [...domOrder, ...hidden];
+      } else {
+        // sorted view: don't let the sorted DOM order overwrite the manual order —
+        // keep existing order, just reconcile which cards belong to this column
+        const keep = col.cards.filter(c => domColOf[c.id] === col.id || !inDom.has(c.id));
+        const keepIds = new Set(keep.map(c => c.id));
+        const incoming = domOrder.filter(c => domColOf[c.id] === col.id && !keepIds.has(c.id));
+        col.cards = [...keep, ...incoming];
+      }
     });
     save();
+    // keep sorted columns visually correct after a drop
+    topic.columns.forEach(col => { if ((col.sort || "manual") !== "manual") rerenderColumn(topic, col); });
     // refresh counts + progress without a full rebuild
     document.querySelectorAll(".column").forEach(colEl => {
       const col = topic.columns.find(c => c.id === colEl.dataset.colId);
-      const c = colEl.querySelector(".count"); if (col && c) c.textContent = col.cards.length;
+      const c = colEl.querySelector(".count");
+      if (col && c) { const v = columnView(topic, col); c.textContent = (v.length !== col.cards.length) ? (v.length + "/" + col.cards.length) : String(col.cards.length); }
     });
     updateProgress();
   }
