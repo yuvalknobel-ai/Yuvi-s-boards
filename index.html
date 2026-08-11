@@ -363,6 +363,29 @@
   .account-row .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .account-row button { background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 12px; }
   .account-row button:hover { border-color: #d98c8c; color: #d98c8c; }
+
+  /* ---------------- Share ---------------- */
+  .share-btn {
+    background: var(--accent-tint); color: var(--accent-strong); border: 1px solid transparent;
+    border-radius: 8px; padding: 6px 14px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s ease;
+  }
+  .share-btn:hover { background: var(--accent-tint-strong); }
+  #shareModal { position: fixed; inset: 0; background: color-mix(in srgb, #1c2530 55%, transparent); display: none; align-items: center; justify-content: center; z-index: 60; backdrop-filter: blur(3px); }
+  #shareModal.open { display: flex; animation: fade .15s ease; }
+  #shareBox { background: var(--card); border: 1px solid var(--border); border-radius: 16px; width: 460px; max-width: 92vw; padding: 26px; box-shadow: var(--shadow-lift); }
+  #shareBox h3 { font-size: 18px; font-weight: 300; letter-spacing: -.2px; }
+  #shareBox label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin: 18px 0 8px; }
+  .share-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 6px; }
+  #shareMembers { display: flex; flex-direction: column; gap: 6px; }
+  .share-member { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; font-size: 13px; }
+  .share-member .who { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .owner-badge { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--accent-strong); background: var(--accent-tint); padding: 2px 8px; border-radius: 10px; }
+  .share-remove { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; font-family: inherit; flex-shrink: 0; }
+  .share-remove:hover { color: #d98c8c; text-decoration: underline; }
+  .share-add { display: flex; gap: 8px; }
+  .share-add input { flex: 1; border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; font-family: inherit; font-size: 14px; background: var(--bg); color: var(--text); outline: none; }
+  .share-add input:focus { border-color: var(--accent); }
+  #shareError { color: #d98c8c; font-size: 12px; margin-top: 10px; min-height: 14px; }
 </style>
 </head>
 <body>
@@ -441,6 +464,24 @@
   </div>
 
   <div id="searchResults"></div>
+
+  <div id="shareModal">
+    <div id="shareBox">
+      <h3>Share “<span id="shareBoardName"></span>”</h3>
+      <p class="share-hint">Anyone you add can view and edit this board. They open this same site and sign in with the Google account for that email.</p>
+      <label>People with access</label>
+      <div id="shareMembers"></div>
+      <label>Invite by email</label>
+      <div class="share-add">
+        <input id="shareEmail" type="email" placeholder="name@gmail.com" autocomplete="off">
+        <button id="shareAddBtn" class="btn btn-primary">Add</button>
+      </div>
+      <div id="shareError"></div>
+      <div class="settings-actions">
+        <button class="btn btn-ghost" id="shareClose">Done</button>
+      </div>
+    </div>
+  </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
@@ -540,7 +581,8 @@ let user = null;
   function isEditing() {
     return !!document.querySelector("input.edit, textarea.edit")
       || $("#modal").classList.contains("open")
-      || $("#settingsModal").classList.contains("open");
+      || $("#settingsModal").classList.contains("open")
+      || $("#shareModal").classList.contains("open");
   }
   function subscribeBoards() {
     if (boardsUnsub) boardsUnsub();
@@ -598,6 +640,56 @@ let user = null;
     b.addEventListener("click", () => { setThemeMode(b.dataset.themeMode); markThemeSelection(); });
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && settingsModal.classList.contains("open")) closeSettings(); });
+
+  // ---------- Share panel ----------
+  const shareModal = $("#shareModal");
+  let shareCtx = null;
+  function openShareModal(topic) {
+    shareCtx = topic;
+    $("#shareBoardName").textContent = topic.name;
+    $("#shareEmail").value = ""; $("#shareError").textContent = "";
+    renderShareMembers();
+    shareModal.classList.add("open");
+    $("#shareEmail").focus();
+  }
+  function closeShare() { shareModal.classList.remove("open"); shareCtx = null; }
+  function renderShareMembers() {
+    const topic = shareCtx; if (!topic) return;
+    const wrap = $("#shareMembers"); wrap.innerHTML = "";
+    (topic.memberEmails || []).forEach(email => {
+      const row = document.createElement("div"); row.className = "share-member";
+      const who = document.createElement("span"); who.className = "who"; who.textContent = email;
+      if (email === topic.ownerEmail) { const b = document.createElement("span"); b.className = "owner-badge"; b.textContent = "owner"; who.appendChild(b); }
+      row.appendChild(who);
+      if (email !== topic.ownerEmail) {
+        const rm = document.createElement("button"); rm.className = "share-remove"; rm.textContent = "Remove";
+        rm.addEventListener("click", () => setMembers(topic.memberEmails.filter(e => e !== email)));
+        row.appendChild(rm);
+      }
+      wrap.appendChild(row);
+    });
+  }
+  function setMembers(list) {
+    const topic = shareCtx; if (!topic) return;
+    topic.memberEmails = list;
+    updateDoc(doc(db, "boards", topic.id), { memberEmails: list })
+      .catch(e => { $("#shareError").textContent = "Couldn't update: " + e.message; });
+    renderShareMembers();
+  }
+  $("#shareAddBtn").addEventListener("click", () => {
+    const topic = shareCtx; if (!topic) return;
+    const email = ($("#shareEmail").value || "").trim().toLowerCase();
+    $("#shareError").textContent = "";
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $("#shareError").textContent = "That doesn't look like an email address."; return; }
+    if ((topic.memberEmails || []).includes(email)) { $("#shareError").textContent = "That person already has access."; return; }
+    setMembers([...(topic.memberEmails || []), email]);
+    $("#shareEmail").value = ""; $("#shareEmail").focus();
+  });
+  $("#shareEmail").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#shareAddBtn").click(); } });
+  $("#shareClose").addEventListener("click", closeShare);
+  shareModal.addEventListener("click", (e) => { if (e.target === shareModal) closeShare(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && shareModal.classList.contains("open")) closeShare(); });
 
   // ---------- Render ----------
   function render() {
@@ -697,6 +789,13 @@ let user = null;
     swatch.addEventListener("input", () => { topic.accent = swatch.value; document.documentElement.style.setProperty("--accent", swatch.value); });
     swatch.addEventListener("change", () => { topic.accent = swatch.value; save(); render(); });
     headerEl.appendChild(swatch);
+
+    // Share button
+    const shareBtn = document.createElement("button");
+    shareBtn.className = "share-btn"; shareBtn.textContent = "🔗 Share";
+    shareBtn.title = "Share this board with someone";
+    shareBtn.addEventListener("click", () => openShareModal(topic));
+    headerEl.appendChild(shareBtn);
 
     // Right side: progress + hide-done + theme
     const right = document.createElement("div");
