@@ -391,6 +391,17 @@
   .share-add input { flex: 1; border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; font-family: inherit; font-size: 14px; background: var(--bg); color: var(--text); outline: none; }
   .share-add input:focus { border-color: var(--accent); }
   #shareError { color: #d98c8c; font-size: 12px; margin-top: 10px; min-height: 14px; }
+
+  /* Invite pop-up (shown to someone a board was shared with) */
+  #inviteModal { position: fixed; inset: 0; background: color-mix(in srgb, #1c2530 55%, transparent); display: none; align-items: center; justify-content: center; z-index: 70; backdrop-filter: blur(3px); }
+  #inviteModal.open { display: flex; animation: fade .15s ease; }
+  #inviteBox { background: var(--card); border: 1px solid var(--border); border-radius: 18px; width: 400px; max-width: 92vw; padding: 30px 28px; box-shadow: var(--shadow-lift); text-align: center; }
+  .invite-emoji { font-size: 42px; }
+  #inviteBox h3 { font-size: 20px; font-weight: 300; margin: 10px 0 8px; }
+  #inviteBox p { font-size: 14px; color: var(--text-soft); line-height: 1.5; margin-bottom: 22px; }
+  .invite-actions { display: flex; gap: 8px; justify-content: center; }
+  /* Shared badge on the sidebar topic row */
+  #topicList li .shared-badge { font-size: 12px; opacity: .7; flex-shrink: 0; }
   /* ---------------- Mobile menu + responsive ---------------- */
   #menuToggle {
     display: none; position: fixed; top: 12px; left: 12px; z-index: 40;
@@ -527,7 +538,7 @@
   <div id="shareModal">
     <div id="shareBox">
       <h3>Share “<span id="shareBoardName"></span>”</h3>
-      <p class="share-hint">Anyone you add can view and edit this board. They open this same site and sign in with the Google account for that email.</p>
+      <p class="share-hint">Anyone you add can view and edit this board. They open this same site, sign in with that Google account, and get a 🎉 pop-up letting them know you shared it.</p>
       <label>People with access</label>
       <div id="shareMembers"></div>
       <label>Invite by email</label>
@@ -538,6 +549,18 @@
       <div id="shareError"></div>
       <div class="settings-actions">
         <button class="btn btn-ghost" id="shareClose">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="inviteModal">
+    <div id="inviteBox">
+      <div class="invite-emoji">🎉</div>
+      <h3 id="inviteTitle">You've been invited!</h3>
+      <p id="inviteText"></p>
+      <div class="invite-actions">
+        <button class="btn btn-ghost" id="inviteDismiss">Got it</button>
+        <button class="btn btn-primary" id="inviteView">Open board</button>
       </div>
     </div>
   </div>
@@ -655,7 +678,30 @@ let user = null;
       if (!state.activeTopicId || !topics.find(t => t.id === state.activeTopicId))
         state.activeTopicId = topics[0] ? topics[0].id : null;
       if (!isEditing()) render();
+      notifyNewShares(topics);
     }, (err) => { console.error("boards listen failed", err); alert("Couldn't load boards:\n" + err.message); });
+  }
+
+  // Pop up when a board has been shared with you (that you haven't seen before)
+  function seenSharesKey() { return "seenShares." + (user && user.email || ""); }
+  function getSeenShares() { try { return new Set(JSON.parse(localStorage.getItem(seenSharesKey()) || "[]")); } catch (e) { return new Set(); } }
+  let pendingInviteId = null;
+  function notifyNewShares(topics) {
+    if (!user) return;
+    const seen = getSeenShares();
+    const sharedToMe = topics.filter(t => t.ownerEmail && t.ownerEmail !== user.email);
+    const fresh = sharedToMe.filter(t => !seen.has(t.id));
+    // remember all current shares so we only ever announce each one once
+    sharedToMe.forEach(t => seen.add(t.id));
+    try { localStorage.setItem(seenSharesKey(), JSON.stringify([...seen])); } catch (e) {}
+    if (!fresh.length) return;
+    const first = fresh[0];
+    pendingInviteId = first.id;
+    $("#inviteTitle").textContent = fresh.length > 1 ? "New shared boards!" : "You've been invited!";
+    $("#inviteText").textContent = fresh.length > 1
+      ? `${fresh.length} boards were shared with you, including “${first.name}”.`
+      : `${first.ownerEmail} shared “${first.name}” with you.`;
+    $("#inviteModal").classList.add("open");
   }
   async function createBoard(board) {
     return addDoc(collection(db, "boards"), Object.assign({
@@ -750,6 +796,16 @@ let user = null;
   shareModal.addEventListener("click", (e) => { if (e.target === shareModal) closeShare(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && shareModal.classList.contains("open")) closeShare(); });
 
+  // ---------- Invite pop-up ----------
+  const inviteModal = $("#inviteModal");
+  function closeInvite() { inviteModal.classList.remove("open"); pendingInviteId = null; }
+  $("#inviteDismiss").addEventListener("click", closeInvite);
+  $("#inviteView").addEventListener("click", () => {
+    if (pendingInviteId && state.topics.find(t => t.id === pendingInviteId)) { state.activeTopicId = pendingInviteId; }
+    closeInvite(); render();
+  });
+  inviteModal.addEventListener("click", (e) => { if (e.target === inviteModal) closeInvite(); });
+
   // ---------- Render ----------
   function render() {
     if (!activeTopic() && state.topics.length) state.activeTopicId = state.topics[0].id;
@@ -777,7 +833,14 @@ let user = null;
       const del = document.createElement("span");
       del.className = "del"; del.textContent = "×"; del.title = "Delete topic";
 
-      li.append(dot, name, del);
+      if ((topic.memberEmails || []).length > 1) {
+        const sb = document.createElement("span");
+        sb.className = "shared-badge"; sb.textContent = "👥";
+        sb.title = (topic.ownerEmail && topic.ownerEmail !== (user && user.email)) ? "Shared with you" : "Shared board";
+        li.append(dot, name, sb, del);
+      } else {
+        li.append(dot, name, del);
+      }
       li.addEventListener("click", () => {
         state.activeTopicId = topic.id;
         topicListEl.querySelectorAll("li").forEach(x => x.classList.toggle("active", x.dataset.topicId === topic.id));
