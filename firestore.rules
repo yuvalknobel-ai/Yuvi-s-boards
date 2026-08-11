@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// Security rules for Yuvi's Boards.
+// A board is readable/editable by anyone whose email is listed in memberEmails.
+// Only the owner (ownerEmail) can delete a board.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /boards/{boardId} {
+      allow read: if request.auth != null
+                  && request.auth.token.email in resource.data.memberEmails;
+
+      allow create: if request.auth != null
+                    && request.auth.token.email == request.resource.data.ownerEmail
+                    && request.auth.token.email in request.resource.data.memberEmails;
+
+      allow update: if request.auth != null
+                    && request.auth.token.email in resource.data.memberEmails;
+
+      allow delete: if request.auth != null
+                    && request.auth.token.email == resource.data.ownerEmail;
+    }
+  }
+}

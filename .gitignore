@@ -2,5 +2,8 @@
 # Ignore everything at the top level by default, then allow just what we want.
 /*
 !boards.html
+!index.html
+!firestore.rules
 !README.md
 !.gitignore
+!.nojekyll
