@@ -413,9 +413,16 @@
     #boardHeader { padding: 14px 16px 12px 66px; gap: 10px; }
     #boardHeader .board-title { font-size: 20px; }
     .header-right { gap: 14px; }
-    #board { padding: 4px 14px 24px; scroll-snap-type: x proximity; }
-    .column { width: 84vw; max-width: 340px; scroll-snap-align: start; }
-    .add-col-wrap { width: 84vw; max-width: 340px; }
+    #board { flex-direction: column; overflow-x: hidden; padding: 0 14px 14px; gap: 0; }
+    .col-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 12px; -webkit-overflow-scrolling: touch; flex-shrink: 0; }
+    .col-tab { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 22px; border: 1px solid var(--border); background: var(--card); color: var(--text-soft); font-family: inherit; font-size: 14px; cursor: pointer; }
+    .col-tab.active { background: var(--accent-tint); color: var(--text); border-color: transparent; font-weight: 600; }
+    .col-tab.drop-target { border-color: var(--accent); background: var(--accent-tint-strong); }
+    .col-tab-count { font-size: 11px; color: var(--text-muted); background: color-mix(in srgb, var(--text) 7%, transparent); padding: 1px 7px; border-radius: 10px; }
+    .col-tab.active .col-tab-count { color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 20%, transparent); }
+    .col-tab-add { font-size: 18px; padding: 9px 16px; color: var(--text-muted); }
+    .column { width: 100% !important; max-width: none; flex: 1 1 auto; min-height: 0; }
+    .col-resize { display: none; }
 
     /* bigger, always-visible touch targets (no hover on touch) */
     .card { padding: 14px; }
@@ -880,17 +887,39 @@ let user = null;
 
     headerEl.appendChild(right);
 
-    // Columns
-    topic.columns.forEach(col => boardEl.appendChild(renderColumn(topic, col)));
+    // Columns — desktop shows all side-by-side; mobile shows one at a time with tabs
+    if (isMobile()) {
+      if (mobileColIndex >= topic.columns.length) mobileColIndex = Math.max(0, topic.columns.length - 1);
+      const tabs = document.createElement("div");
+      tabs.className = "col-tabs";
+      topic.columns.forEach((col, i) => {
+        const tab = document.createElement("button");
+        tab.className = "col-tab" + (i === mobileColIndex ? " active" : "");
+        tab.dataset.colIndex = i;
+        const nm = document.createElement("span"); nm.textContent = col.name; nm.dir = "auto";
+        const cnt = document.createElement("span"); cnt.className = "col-tab-count"; cnt.textContent = columnView(topic, col).length;
+        tab.append(nm, cnt);
+        tab.addEventListener("click", () => { mobileColIndex = i; renderBoard(); });
+        tabs.appendChild(tab);
+      });
+      const addTab = document.createElement("button");
+      addTab.className = "col-tab col-tab-add"; addTab.textContent = "+"; addTab.title = "Add column";
+      addTab.addEventListener("click", () => { topic.columns.push({ id: uid(), name: "New column", cards: [], sort: "manual", filter: [] }); mobileColIndex = topic.columns.length - 1; save(); render(); });
+      tabs.appendChild(addTab);
+      boardEl.appendChild(tabs);
 
-    // Add column
-    const addWrap = document.createElement("div");
-    addWrap.className = "add-col-wrap";
-    const addBtn = document.createElement("button");
-    addBtn.className = "add-col"; addBtn.textContent = "+ Add column";
-    addBtn.addEventListener("click", () => { topic.columns.push({ id: uid(), name: "New column", cards: [] }); save(); render(); });
-    addWrap.appendChild(addBtn);
-    boardEl.appendChild(addWrap);
+      const activeCol = topic.columns[mobileColIndex];
+      if (activeCol) boardEl.appendChild(renderColumn(topic, activeCol));
+    } else {
+      topic.columns.forEach(col => boardEl.appendChild(renderColumn(topic, col)));
+      const addWrap = document.createElement("div");
+      addWrap.className = "add-col-wrap";
+      const addBtn = document.createElement("button");
+      addBtn.className = "add-col"; addBtn.textContent = "+ Add column";
+      addBtn.addEventListener("click", () => { topic.columns.push({ id: uid(), name: "New column", cards: [], sort: "manual", filter: [] }); save(); render(); });
+      addWrap.appendChild(addBtn);
+      boardEl.appendChild(addWrap);
+    }
 
     if (!boardDragBound) {
       boardEl.addEventListener("dragover", (e) => {
@@ -907,6 +936,8 @@ let user = null;
 
   let draggingColEl = null;
   let boardDragBound = false;
+  let mobileColIndex = 0;
+  function isMobile() { return window.innerWidth <= 768; }
   function commitColumnOrder() {
     const topic = activeTopic(); if (!topic) return;
     const lookup = {}; topic.columns.forEach(c => lookup[c.id] = c);
@@ -1483,6 +1514,11 @@ let user = null;
   const menuToggle = $("#menuToggle"), sidebarBackdrop = $("#sidebarBackdrop");
   if (menuToggle) menuToggle.addEventListener("click", () => toggleSidebar());
   if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", () => toggleSidebar(false));
+  let lastMobile = isMobile();
+  window.addEventListener("resize", () => {
+    const m = isMobile();
+    if (m !== lastMobile) { lastMobile = m; if (activeTopic()) renderBoard(); }
+  });
 
   // ---------- Auth gate + cloud sync ----------
   const authGate = $("#authGate");
