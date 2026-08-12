@@ -1598,6 +1598,10 @@ let user = null;
     if (u) {
       authGate.classList.add("hidden");
       const em = $("#accountEmail"); if (em) em.textContent = u.email || u.displayName || "";
+      const first = (u.displayName || "").trim().split(/\s+/)[0];
+      const h1 = document.querySelector("#sidebar h1");
+      if (h1) h1.textContent = (u.email === "yuvalknobel@gmail.com") ? "🌿 Yuvi's Boards"
+        : (first ? `🌿 ${first}'s Boards` : "🌿 My Boards");
       subscribeBoards(); // live cloud boards for this account
     } else {
       if (boardsUnsub) { boardsUnsub(); boardsUnsub = null; }
