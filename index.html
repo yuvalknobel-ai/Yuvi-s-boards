@@ -681,7 +681,9 @@ let user = null;
       state.topics = topics;
       if (!state.activeTopicId || !topics.find(t => t.id === state.activeTopicId))
         state.activeTopicId = topics[0] ? topics[0].id : null;
-      if (!isEditing()) render();
+      // Only re-render if the incoming data actually differs from what's on screen.
+      // A server-confirmed echo of our own change matches → no flashy re-render.
+      if (!isEditing() && boardsSig() !== renderedSig) render();
       notifyNewShares(topics);
     }, (err) => { console.error("boards listen failed", err); alert("Couldn't load boards:\n" + err.message); });
   }
@@ -811,10 +813,19 @@ let user = null;
   inviteModal.addEventListener("click", (e) => { if (e.target === inviteModal) closeInvite(); });
 
   // ---------- Render ----------
+  // Signature of what's on screen, so a server snapshot that matches what we
+  // already rendered doesn't trigger a redundant full re-render (the "refresh").
+  let renderedSig = "";
+  function boardsSig() {
+    return (state.activeTopicId || "") + "|" + JSON.stringify(
+      state.topics.map(t => ({ i: t.id, n: t.name, a: t.accent, h: !!t.hideDone, o: t.order, c: t.columns }))
+    );
+  }
   function render() {
     if (!activeTopic() && state.topics.length) state.activeTopicId = state.topics[0].id;
     renderSidebar();
     renderBoard();
+    renderedSig = boardsSig();
   }
 
   function renderSidebar() {
