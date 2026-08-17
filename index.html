@@ -209,6 +209,10 @@
   .col-menu .menu-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .col-menu .menu-item.on { color: var(--text); font-weight: 600; }
   .col-menu .mi-check { width: 15px; flex-shrink: 0; color: var(--accent-strong); }
+  .col-menu .count-row .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .col-menu .count-row .count-name { flex: 1; }
+  .col-menu .mi-count { flex-shrink: 0; min-width: 20px; text-align: center; font-weight: 600; font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); border-radius: 10px; padding: 1px 7px; }
+  .col-menu .menu-empty { padding: 6px 8px; font-size: 12px; color: var(--text-muted); font-style: italic; }
   .col-menu .menu-div { height: 1px; background: var(--border); margin: 6px 4px; }
   .col-menu .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 6px 4px; }
   .col-menu .menu-chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 20px; padding: 5px 10px; font-size: 12px; cursor: pointer; color: var(--text-muted); background: none; font-family: inherit; }
@@ -1042,6 +1046,33 @@ let user = null;
   }
   function fillColMenu(menu, topic, col) {
     menu.innerHTML = "";
+    // ----- Count by color -----
+    const counts = {};
+    (col.cards || []).forEach(c => (c.labels || []).forEach(k => { counts[k] = (counts[k] || 0) + 1; }));
+    const used = LABELS.filter(l => counts[l.key]);
+    const ch = document.createElement("div"); ch.className = "mh"; ch.textContent = "Count by color"; menu.appendChild(ch);
+    if (!used.length) {
+      const none = document.createElement("div"); none.className = "menu-empty"; none.textContent = "No labels yet"; menu.appendChild(none);
+    } else {
+      used.forEach(l => {
+        const on = col.filter && col.filter.includes(l.key);
+        const row = document.createElement("button");
+        row.className = "menu-item count-row" + (on ? " on" : "");
+        row.title = "Click to show only " + l.name;
+        const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = l.color;
+        const nm = document.createElement("span"); nm.className = "count-name"; nm.textContent = l.name;
+        const badge = document.createElement("span"); badge.className = "mi-count"; badge.textContent = counts[l.key];
+        row.append(dot, nm, badge);
+        row.addEventListener("click", () => {
+          col.filter = col.filter || [];
+          const i = col.filter.indexOf(l.key);
+          if (i >= 0) col.filter.splice(i, 1); else col.filter.push(l.key);
+          save(); rerenderColumn(topic, col); fillColMenu(menu, topic, col);
+        });
+        menu.appendChild(row);
+      });
+    }
+    const dv0 = document.createElement("div"); dv0.className = "menu-div"; menu.appendChild(dv0);
     const sh = document.createElement("div"); sh.className = "mh"; sh.textContent = "Sort by"; menu.appendChild(sh);
     [["manual", "Added order"], ["label", "Label color"], ["due", "Due date"]].forEach(([key, label]) => {
       const on = (col.sort || "manual") === key;
