@@ -901,6 +901,9 @@ let user = null;
   function renderBoard() {
     closeColMenu();
     const topic = activeTopic();
+    // Preserve scroll positions across the rebuild so editing a card doesn't jump to the top
+    const prevScroll = { left: boardEl.scrollLeft, cols: {} };
+    boardEl.querySelectorAll(".cards").forEach(el => { prevScroll.cols[el.dataset.colId] = el.scrollTop; });
     headerEl.innerHTML = "";
     boardEl.innerHTML = "";
     if (!topic) {
@@ -998,6 +1001,13 @@ let user = null;
       addWrap.appendChild(addBtn);
       boardEl.appendChild(addWrap);
     }
+
+    // Restore scroll positions captured before the rebuild
+    boardEl.scrollLeft = prevScroll.left;
+    boardEl.querySelectorAll(".cards").forEach(el => {
+      const y = prevScroll.cols[el.dataset.colId];
+      if (y != null) el.scrollTop = y;
+    });
 
     if (!boardDragBound) {
       boardEl.addEventListener("dragover", (e) => {
