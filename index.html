@@ -817,8 +817,22 @@ let user = null;
   // already rendered doesn't trigger a redundant full re-render (the "refresh").
   let renderedSig = "";
   function boardsSig() {
+    // Canonical/normalized signature: uses a fixed field set with defaults so that
+    // optional fields being added by migrate() on the server round-trip (e.g. due:"")
+    // can't change the signature and wrongly trigger a full re-render (flicker).
     return (state.activeTopicId || "") + "|" + JSON.stringify(
-      state.topics.map(t => ({ i: t.id, n: t.name, a: t.accent, h: !!t.hideDone, o: t.order, c: t.columns }))
+      state.topics.map(t => ({
+        i: t.id, n: t.name || "", a: t.accent || "", h: !!t.hideDone, o: t.order || 0,
+        m: (t.memberEmails || []).slice().sort(),
+        c: (t.columns || []).map(col => ({
+          i: col.id, n: col.name || "", s: col.sort || "manual",
+          f: (col.filter || []).slice().sort(), w: col.width || 0,
+          k: (col.cards || []).map(cd => [
+            cd.id, cd.title || "", cd.notes || "", !!cd.done,
+            (cd.labels || []).join(","), cd.due || ""
+          ])
+        }))
+      }))
     );
   }
   function render() {
