@@ -1217,17 +1217,21 @@ let user = null;
     addCard.className = "add-card"; addCard.textContent = "+ Add card";
     addCard.addEventListener("click", () => {
       const card = { id: uid(), title: "", notes: "", done: false, labels: [] };
-      col.cards.push(card); save(); render();
+      col.cards.push(card);
+      rerenderColumn(topic, col);      // rebuild just this column — no whole-board flicker
+      renderedSig = boardsSig();        // keep the cloud echo from forcing a re-render
       // Edit the new card's title right in the column; discard it if left blank
-      const titleEl = document.querySelector('.card[data-card-id="' + card.id + '"] .card-title');
-      if (!titleEl) return;
+      const titleEl = boardEl.querySelector('.column[data-col-id="' + col.id + '"] .card[data-card-id="' + card.id + '"] .card-title');
+      if (!titleEl) { col.cards = col.cards.filter(c => c.id !== card.id); return; } // hidden by an active filter
       const cardEl = titleEl.closest(".card"); if (cardEl) cardEl.draggable = false;
       titleEl.scrollIntoView({ block: "nearest" });
       inlineEdit(titleEl, "", (val) => {
         const v = (val || "").trim();
         if (!v) col.cards = col.cards.filter(c => c.id !== card.id); // blank → discard
         else card.title = v;
-        save(); render();
+        save();
+        rerenderColumn(topic, col);
+        renderedSig = boardsSig();
       });
     });
 
